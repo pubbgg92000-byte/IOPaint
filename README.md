@@ -1,3 +1,14 @@
+---
+title: IOPaint Bulk
+emoji: 🖌️
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+license: apache-2.0
+---
+
 <h1 align="center">IOPaint</h1>
 <p align="center">A free and open-source inpainting & outpainting tool powered by SOTA AI model.</p>
 

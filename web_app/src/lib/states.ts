@@ -140,6 +140,8 @@ type EditorState = {
 
 type AppState = {
   file: File | null
+  bulkImages: BulkImageItem[]
+  activeBulkImageId: string | null
   paintByExampleFile: File | null
   customMask: File | null
   imageHeight: number
@@ -163,9 +165,20 @@ type AppState = {
   settings: Settings
 }
 
+export type BulkImageItem = {
+  id: string
+  name: string
+  file: File
+}
+
 type AppAction = {
   updateAppState: (newState: Partial<AppState>) => void
   setFile: (file: File) => Promise<void>
+  addBulkFiles: (files: File[]) => Promise<void>
+  selectBulkImage: (id: string) => Promise<void>
+  selectNextBulkImage: () => Promise<void>
+  selectPreviousBulkImage: () => Promise<void>
+  clearBulkImages: () => void
   setCustomFile: (file: File) => void
   setIsInpainting: (newValue: boolean) => void
   getIsProcessing: () => boolean
@@ -238,6 +251,8 @@ type AppAction = {
 
 const defaultValues: AppState = {
   file: null,
+  bulkImages: [],
+  activeBulkImageId: null,
   paintByExampleFile: null,
   customMask: null,
   imageHeight: 0,
@@ -778,6 +793,90 @@ export const useStore = createWithEqualityFn<AppState & AppAction>()(
 
       updateAppState: (newState: Partial<AppState>) => {
         set(() => newState)
+      },
+
+      addBulkFiles: async (files: File[]) => {
+        const validFiles = files.filter((file) => {
+          const isImage = file.type.startsWith("image/")
+          const isUnderLimit = file.size <= 20 * 1024 * 1024
+          return isImage && isUnderLimit
+        })
+
+        if (validFiles.length === 0) {
+          toast({
+            variant: "destructive",
+            description: "Please select image files under 20 MB each.",
+          })
+          return
+        }
+
+        const createdAt = Date.now()
+        const newItems = validFiles.map((file, index) => ({
+          id: `${createdAt}-${index}-${file.name}-${file.size}-${file.lastModified}`,
+          name: file.name,
+          file,
+        }))
+
+        const shouldLoadFirst =
+          get().file === null || get().bulkImages.length === 0
+
+        set((state) => {
+          state.bulkImages.push(...newItems)
+          if (shouldLoadFirst) {
+            state.activeBulkImageId = newItems[0].id
+          }
+        })
+
+        if (shouldLoadFirst) {
+          await get().setFile(newItems[0].file)
+        }
+      },
+
+      selectBulkImage: async (id: string) => {
+        const item = get().bulkImages.find((image) => image.id === id)
+        if (!item) {
+          return
+        }
+
+        set((state) => {
+          state.activeBulkImageId = id
+        })
+        await get().setFile(item.file)
+      },
+
+      selectNextBulkImage: async () => {
+        const { bulkImages, activeBulkImageId } = get()
+        if (bulkImages.length === 0) {
+          return
+        }
+
+        const activeIndex = bulkImages.findIndex(
+          (image) => image.id === activeBulkImageId
+        )
+        const nextIndex =
+          activeIndex === -1 ? 0 : (activeIndex + 1) % bulkImages.length
+        await get().selectBulkImage(bulkImages[nextIndex].id)
+      },
+
+      selectPreviousBulkImage: async () => {
+        const { bulkImages, activeBulkImageId } = get()
+        if (bulkImages.length === 0) {
+          return
+        }
+
+        const activeIndex = bulkImages.findIndex(
+          (image) => image.id === activeBulkImageId
+        )
+        const previousIndex =
+          activeIndex <= 0 ? bulkImages.length - 1 : activeIndex - 1
+        await get().selectBulkImage(bulkImages[previousIndex].id)
+      },
+
+      clearBulkImages: () => {
+        set((state) => {
+          state.bulkImages = []
+          state.activeBulkImageId = null
+        })
       },
 
       getBrushSize: (): number => {

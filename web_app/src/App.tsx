@@ -18,12 +18,12 @@ const SUPPORTED_FILE_TYPE = [
   "image/tiff",
 ]
 function Home() {
-  const [file, updateAppState, setServerConfig, setFile] = useStore((state) => [
+  const [file, updateAppState, setServerConfig] = useStore((state) => [
     state.file,
     state.updateAppState,
     state.setServerConfig,
-    state.setFile,
   ])
+  const addBulkFiles = useStore((state) => state.addBulkFiles)
 
   const userInputImage = useInputImage()
 
@@ -31,9 +31,9 @@ function Home() {
 
   useEffect(() => {
     if (userInputImage) {
-      setFile(userInputImage)
+      addBulkFiles([userInputImage])
     }
-  }, [userInputImage, setFile])
+  }, [userInputImage, addBulkFiles])
 
   useEffect(() => {
     updateAppState({ windowSize })
@@ -75,30 +75,13 @@ function Home() {
     event.preventDefault()
     event.stopPropagation()
     if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-      if (event.dataTransfer.files.length > 1) {
-        // setToastState({
-        //   open: true,
-        //   desc: "Please drag and drop only one file",
-        //   state: "error",
-        //   duration: 3000,
-        // })
-      } else {
-        const dragFile = event.dataTransfer.files[0]
-        const fileType = dragFile.type
-        if (SUPPORTED_FILE_TYPE.includes(fileType)) {
-          setFile(dragFile)
-        } else {
-          // setToastState({
-          //   open: true,
-          //   desc: "Please drag and drop an image file",
-          //   state: "error",
-          //   duration: 3000,
-          // })
-        }
-      }
+      const files = Array.from<File>(event.dataTransfer.files).filter((file) =>
+        SUPPORTED_FILE_TYPE.includes(file.type)
+      )
+      addBulkFiles(files)
       event.dataTransfer.clearData()
     }
-  }, [])
+  }, [addBulkFiles])
 
   const onPaste = useCallback((event: any) => {
     // TODO: when sd side panel open, ctrl+v not work
@@ -127,9 +110,9 @@ function Home() {
     // Get the blob of image
     const blob = item.getAsFile()
     if (blob) {
-      setFile(blob)
+      addBulkFiles([blob])
     }
-  }, [])
+  }, [addBulkFiles])
 
   useEffect(() => {
     window.addEventListener("dragenter", handleDragIn)
@@ -154,7 +137,7 @@ function Home() {
       {!file ? (
         <FileSelect
           onSelection={async (f) => {
-            setFile(f)
+            addBulkFiles(f)
           }}
         />
       ) : (

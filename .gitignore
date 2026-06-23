@@ -8,5 +8,6 @@ build
 dist/
 IOPaint.egg-info/
 venv/
+.venv/
 tmp/
 iopaint/web_app/

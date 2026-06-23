@@ -6,7 +6,14 @@ import { useImage } from "@/hooks/useImage"
 
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import PromptInput from "./PromptInput"
-import { RotateCw, Image, Upload } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Image,
+  RotateCw,
+  Trash2,
+  Upload,
+} from "lucide-react"
 import FileManager, { MASK_TAB } from "./FileManager"
 import { getMediaBlob, getMediaFile } from "@/lib/api"
 import { useStore } from "@/lib/states"
@@ -32,6 +39,13 @@ const Header = () => {
     imageHeight,
     imageWidth,
     handleFileManagerMaskSelect,
+    bulkImages,
+    activeBulkImageId,
+    addBulkFiles,
+    selectBulkImage,
+    selectNextBulkImage,
+    selectPreviousBulkImage,
+    clearBulkImages,
   ] = useStore((state) => [
     state.file,
     state.customMask,
@@ -48,11 +62,21 @@ const Header = () => {
     state.imageHeight,
     state.imageWidth,
     state.handleFileManagerMaskSelect,
+    state.bulkImages,
+    state.activeBulkImageId,
+    state.addBulkFiles,
+    state.selectBulkImage,
+    state.selectNextBulkImage,
+    state.selectPreviousBulkImage,
+    state.clearBulkImages,
   ])
 
   const { toast } = useToast()
   const [maskImage, maskImageLoaded] = useImage(customMask)
   const [openMaskPopover, setOpenMaskPopover] = useState(false)
+  const activeBulkIndex = bulkImages.findIndex(
+    (image) => image.id === activeBulkImageId
+  )
 
   const handleRerunLastMask = () => {
     runInpainting()
@@ -95,13 +119,62 @@ const Header = () => {
 
         <ImageUploadButton
           disabled={isInpainting}
-          tooltip="Upload image"
+          tooltip="Upload images"
+          multiple
           onFileUpload={(file) => {
-            setFile(file)
+            addBulkFiles([file])
+          }}
+          onFilesUpload={(files) => {
+            addBulkFiles(files)
           }}
         >
           <Image />
         </ImageUploadButton>
+
+        {bulkImages.length > 1 ? (
+          <div className="flex items-center gap-1 rounded-md border bg-background px-1 py-0.5">
+            <IconButton
+              disabled={isInpainting}
+              tooltip="Previous image"
+              onClick={selectPreviousBulkImage}
+            >
+              <ChevronLeft />
+            </IconButton>
+            <select
+              className="h-8 max-w-[180px] bg-background px-2 text-xs outline-none"
+              disabled={isInpainting}
+              value={activeBulkImageId ?? ""}
+              onChange={(event) => {
+                selectBulkImage(event.currentTarget.value)
+              }}
+            >
+              {bulkImages.map((image, index) => (
+                <option key={image.id} value={image.id}>
+                  {index + 1}. {image.name}
+                </option>
+              ))}
+            </select>
+            <span className="w-12 text-center text-xs text-muted-foreground">
+              {activeBulkIndex + 1}/{bulkImages.length}
+            </span>
+            <IconButton
+              disabled={isInpainting}
+              tooltip="Next image"
+              onClick={selectNextBulkImage}
+            >
+              <ChevronRight />
+            </IconButton>
+            <IconButton
+              disabled={isInpainting}
+              tooltip="Clear image queue"
+              onClick={clearBulkImages}
+            >
+              <Trash2 />
+            </IconButton>
+          </div>
+        ) : (
+          <></>
+        )}
 
         <div
           className={cn([

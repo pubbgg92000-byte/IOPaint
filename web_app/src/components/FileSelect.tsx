@@ -2,7 +2,7 @@ import { useState } from "react"
 import useResolution from "@/hooks/useResolution"
 
 type FileSelectProps = {
-  onSelection: (file: File) => void
+  onSelection: (files: File[]) => void
 }
 
 export default function FileSelect(props: FileSelectProps) {
@@ -12,24 +12,19 @@ export default function FileSelect(props: FileSelectProps) {
 
   const resolution = useResolution()
 
-  function onFileSelected(file: File) {
-    if (!file) {
+  function onFilesSelected(files: File[]) {
+    const imageFiles = files.filter((file) => file.type.match("image.*"))
+    const oversizedFile = imageFiles.find(
+      (file) => file.size > 20 * 1024 * 1024
+    )
+
+    if (oversizedFile) {
+      alert(`error: ${oversizedFile.name} is larger than 20 MB`)
       return
     }
-    // Skip non-image files
-    const isImage = file.type.match("image.*")
-    if (!isImage) {
-      return
-    }
-    try {
-      // Check if file is larger than 20mb
-      if (file.size > 20 * 1024 * 1024) {
-        throw new Error("file too large")
-      }
-      onSelection(file)
-    } catch (e) {
-      // eslint-disable-next-line
-      alert(`error: ${(e as any).message}`)
+
+    if (imageFiles.length > 0) {
+      onSelection(imageFiles)
     }
   }
 
@@ -51,18 +46,19 @@ export default function FileSelect(props: FileSelectProps) {
             id={uploadElemId}
             name={uploadElemId}
             type="file"
+            multiple
             onChange={(ev) => {
-              const file = ev.currentTarget.files?.[0]
-              if (file) {
-                onFileSelected(file)
+              const files = Array.from(ev.currentTarget.files ?? [])
+              if (files.length > 0) {
+                onFilesSelected(files)
               }
             }}
-            accept="image/png, image/jpeg"
+            accept="image/png, image/jpeg, image/webp, image/bmp, image/tiff"
           />
           <p className="text-center">
             {resolution === "desktop"
-              ? "Click here or drag an image file"
-              : "Tap here to load your picture"}
+              ? "Click here or drag image files"
+              : "Tap here to load your pictures"}
           </p>
         </div>
       </label>

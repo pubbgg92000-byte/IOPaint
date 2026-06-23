@@ -1,0 +1,12 @@
+.git
+.venv
+venv
+node_modules
+web_app/node_modules
+web_app/dist
+IOPaint.egg-info
+__pycache__
+**/__pycache__
+.DS_Store
+tmp
+examples
