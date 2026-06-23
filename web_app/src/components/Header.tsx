@@ -7,20 +7,27 @@ import { useImage } from "@/hooks/useImage"
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
 import PromptInput from "./PromptInput"
 import {
+  Archive,
   ChevronLeft,
   ChevronRight,
+  Download,
   Image,
+  Pencil,
   RotateCw,
   Trash2,
   Upload,
 } from "lucide-react"
+import { zipSync } from "fflate"
 import FileManager, { MASK_TAB } from "./FileManager"
 import { getMediaBlob, getMediaFile } from "@/lib/api"
 import { useStore } from "@/lib/states"
 import SettingsDialog from "./Settings"
-import { cn, fileToImage } from "@/lib/utils"
+import { cn, downloadBlob, fileToImage } from "@/lib/utils"
 import Coffee from "./Coffee"
 import { useToast } from "./ui/use-toast"
+
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error)
 
 const Header = () => {
   const [
@@ -45,7 +52,10 @@ const Header = () => {
     selectBulkImage,
     selectNextBulkImage,
     selectPreviousBulkImage,
+    snapshotCurrentBulkImage,
+    renameBulkImage,
     clearBulkImages,
+    activeRenderCount,
   ] = useStore((state) => [
     state.file,
     state.customMask,
@@ -68,15 +78,111 @@ const Header = () => {
     state.selectBulkImage,
     state.selectNextBulkImage,
     state.selectPreviousBulkImage,
+    state.snapshotCurrentBulkImage,
+    state.renameBulkImage,
     state.clearBulkImages,
+    state.editorState.renders.length,
   ])
 
   const { toast } = useToast()
   const [maskImage, maskImageLoaded] = useImage(customMask)
   const [openMaskPopover, setOpenMaskPopover] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const activeBulkIndex = bulkImages.findIndex(
     (image) => image.id === activeBulkImageId
   )
+  const activeBulkImage = bulkImages[activeBulkIndex]
+
+  const getExportBlob = async (item: (typeof bulkImages)[number]) => {
+    const renders = item.session?.editorState.renders ?? []
+    if (renders.length === 0) {
+      return item.file
+    }
+    const render = renders[renders.length - 1]
+    const response = await fetch(render.currentSrc || render.src)
+    if (!response.ok) {
+      throw new Error(`Could not prepare ${item.name}`)
+    }
+    return response.blob()
+  }
+
+  const prepareBulkImages = () => {
+    snapshotCurrentBulkImage()
+    return useStore.getState().bulkImages
+  }
+
+  const handleDownloadCurrent = async () => {
+    const items = prepareBulkImages()
+    const item = items.find((image) => image.id === activeBulkImageId)
+    if (!item) return
+
+    try {
+      setIsExporting(true)
+      downloadBlob(await getExportBlob(item), item.name)
+    } catch (error: unknown) {
+      toast({
+        variant: "destructive",
+        description: errorMessage(error),
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleDownloadZip = async () => {
+    const items = prepareBulkImages()
+    if (items.length === 0) return
+
+    try {
+      setIsExporting(true)
+      const usedNames = new Set<string>()
+      const files: Record<string, Uint8Array> = {}
+
+      for (const item of items) {
+        const safeName = item.name.replace(/[\\/:*?"<>|]/g, "_")
+        const extensionIndex = safeName.lastIndexOf(".")
+        const base =
+          extensionIndex > 0 ? safeName.slice(0, extensionIndex) : safeName
+        const extension =
+          extensionIndex > 0 ? safeName.slice(extensionIndex) : ""
+        let uniqueName = safeName
+        let suffix = 2
+        while (usedNames.has(uniqueName.toLowerCase())) {
+          uniqueName = `${base} (${suffix})${extension}`
+          suffix += 1
+        }
+        usedNames.add(uniqueName.toLowerCase())
+
+        const blob = await getExportBlob(item)
+        files[uniqueName] = new Uint8Array(await blob.arrayBuffer())
+      }
+
+      downloadBlob(
+        new Blob([zipSync(files, { level: 0 })], { type: "application/zip" }),
+        "iopaint-images.zip"
+      )
+      toast({ description: `Downloaded ${items.length} images as a ZIP` })
+    } catch (error: unknown) {
+      toast({
+        variant: "destructive",
+        description: errorMessage(error),
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleRename = () => {
+    if (!activeBulkImage) return
+    const nextName = window.prompt("Rename image", activeBulkImage.name)?.trim()
+    if (!nextName) return
+
+    const oldExtension = activeBulkImage.name.match(/\.[^./]+$/)?.[0] ?? ""
+    const nameWithExtension = /\.[^./]+$/.test(nextName)
+      ? nextName
+      : `${nextName}${oldExtension}`
+    renameBulkImage(activeBulkImage.id, nameWithExtension)
+  }
 
   const handleRerunLastMask = () => {
     runInpainting()
@@ -131,10 +237,10 @@ const Header = () => {
           <Image />
         </ImageUploadButton>
 
-        {bulkImages.length > 1 ? (
+        {bulkImages.length > 0 ? (
           <div className="flex items-center gap-1 rounded-md border bg-background px-1 py-0.5">
             <IconButton
-              disabled={isInpainting}
+              disabled={isInpainting || bulkImages.length < 2}
               tooltip="Previous image"
               onClick={selectPreviousBulkImage}
             >
@@ -151,6 +257,11 @@ const Header = () => {
               {bulkImages.map((image, index) => (
                 <option key={image.id} value={image.id}>
                   {index + 1}. {image.name}
+                  {(image.id === activeBulkImageId
+                    ? activeRenderCount > 0
+                    : (image.session?.editorState.renders.length ?? 0) > 0)
+                    ? " (edited)"
+                    : ""}
                 </option>
               ))}
             </select>
@@ -158,11 +269,32 @@ const Header = () => {
               {activeBulkIndex + 1}/{bulkImages.length}
             </span>
             <IconButton
-              disabled={isInpainting}
+              disabled={isInpainting || bulkImages.length < 2}
               tooltip="Next image"
               onClick={selectNextBulkImage}
             >
               <ChevronRight />
+            </IconButton>
+            <IconButton
+              disabled={isInpainting || isExporting}
+              tooltip="Rename current image"
+              onClick={handleRename}
+            >
+              <Pencil />
+            </IconButton>
+            <IconButton
+              disabled={isInpainting || isExporting}
+              tooltip="Download current image"
+              onClick={handleDownloadCurrent}
+            >
+              <Download />
+            </IconButton>
+            <IconButton
+              disabled={isInpainting || isExporting}
+              tooltip="Download all images as ZIP"
+              onClick={handleDownloadZip}
+            >
+              <Archive />
             </IconButton>
             <IconButton
               disabled={isInpainting}

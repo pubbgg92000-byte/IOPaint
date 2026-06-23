@@ -179,6 +179,12 @@ export function downloadImage(uri: string, name: string) {
   }, 100)
 }
 
+export function downloadBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob)
+  downloadImage(url, name)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 export function mouseXY(ev: SyntheticEvent) {
     const mouseEvent = ev.nativeEvent as MouseEvent
     // Handle mask drawing coordinate on mobile/tablet devices

@@ -119,7 +119,7 @@ type InteractiveSegState = {
   clicks: number[][]
 }
 
-type EditorState = {
+export type EditorState = {
   baseBrushSize: number
   brushSizeScale: number
   renders: HTMLImageElement[]
@@ -169,6 +169,15 @@ export type BulkImageItem = {
   id: string
   name: string
   file: File
+  session: BulkImageSession | null
+}
+
+export type BulkImageSession = {
+  editorState: EditorState
+  imageWidth: number
+  imageHeight: number
+  cropperState: CropperState
+  extenderState: CropperState
 }
 
 type AppAction = {
@@ -178,6 +187,8 @@ type AppAction = {
   selectBulkImage: (id: string) => Promise<void>
   selectNextBulkImage: () => Promise<void>
   selectPreviousBulkImage: () => Promise<void>
+  snapshotCurrentBulkImage: () => void
+  renameBulkImage: (id: string, name: string) => void
   clearBulkImages: () => void
   setCustomFile: (file: File) => void
   setIsInpainting: (newValue: boolean) => void
@@ -378,6 +389,26 @@ const defaultValues: AppState = {
     adjustMaskKernelSize: 12,
   },
 }
+
+const cloneLineGroup = (lineGroup: LineGroup): LineGroup =>
+  lineGroup.map((line) => ({
+    ...line,
+    pts: line.pts.map((point) => ({ ...point })),
+  }))
+
+const cloneEditorState = (editorState: EditorState): EditorState => ({
+  ...editorState,
+  renders: [...editorState.renders],
+  extraMasks: [...editorState.extraMasks],
+  prevExtraMasks: [...editorState.prevExtraMasks],
+  temporaryMasks: [...editorState.temporaryMasks],
+  lineGroups: editorState.lineGroups.map(cloneLineGroup),
+  lastLineGroup: cloneLineGroup(editorState.lastLineGroup),
+  curLineGroup: cloneLineGroup(editorState.curLineGroup),
+  redoRenders: [...editorState.redoRenders],
+  redoCurLines: cloneLineGroup(editorState.redoCurLines),
+  redoLineGroups: editorState.redoLineGroups.map(cloneLineGroup),
+})
 
 export const useStore = createWithEqualityFn<AppState & AppAction>()(
   persist(
@@ -815,6 +846,7 @@ export const useStore = createWithEqualityFn<AppState & AppAction>()(
           id: `${createdAt}-${index}-${file.name}-${file.size}-${file.lastModified}`,
           name: file.name,
           file,
+          session: null,
         }))
 
         const shouldLoadFirst =
@@ -833,6 +865,11 @@ export const useStore = createWithEqualityFn<AppState & AppAction>()(
       },
 
       selectBulkImage: async (id: string) => {
+        if (id === get().activeBulkImageId) {
+          return
+        }
+
+        get().snapshotCurrentBulkImage()
         const item = get().bulkImages.find((image) => image.id === id)
         if (!item) {
           return
@@ -840,8 +877,30 @@ export const useStore = createWithEqualityFn<AppState & AppAction>()(
 
         set((state) => {
           state.activeBulkImageId = id
+          state.file = item.file
+          state.interactiveSegState = castDraft(
+            defaultValues.interactiveSegState
+          )
+          state.customMask = null
+
+          if (item.session) {
+            state.editorState = castDraft(
+              cloneEditorState(item.session.editorState)
+            )
+            state.imageWidth = item.session.imageWidth
+            state.imageHeight = item.session.imageHeight
+            state.cropperState = { ...item.session.cropperState }
+            state.extenderState = { ...item.session.extenderState }
+          } else {
+            state.editorState = castDraft(
+              cloneEditorState(defaultValues.editorState)
+            )
+            state.imageWidth = 0
+            state.imageHeight = 0
+            state.cropperState = { ...defaultValues.cropperState }
+            state.extenderState = { ...defaultValues.extenderState }
+          }
         })
-        await get().setFile(item.file)
       },
 
       selectNextBulkImage: async () => {
@@ -870,6 +929,43 @@ export const useStore = createWithEqualityFn<AppState & AppAction>()(
         const previousIndex =
           activeIndex <= 0 ? bulkImages.length - 1 : activeIndex - 1
         await get().selectBulkImage(bulkImages[previousIndex].id)
+      },
+
+      snapshotCurrentBulkImage: () => {
+        const current = get()
+        if (!current.activeBulkImageId || !current.file) {
+          return
+        }
+
+        const session: BulkImageSession = {
+          editorState: cloneEditorState(current.editorState),
+          imageWidth: current.imageWidth,
+          imageHeight: current.imageHeight,
+          cropperState: { ...current.cropperState },
+          extenderState: { ...current.extenderState },
+        }
+
+        set((state) => {
+          const item = state.bulkImages.find(
+            (image) => image.id === current.activeBulkImageId
+          )
+          if (item) {
+            item.session = castDraft(session)
+          }
+        })
+      },
+
+      renameBulkImage: (id: string, name: string) => {
+        const trimmedName = name.trim()
+        if (!trimmedName) {
+          return
+        }
+        set((state) => {
+          const item = state.bulkImages.find((image) => image.id === id)
+          if (item) {
+            item.name = trimmedName
+          }
+        })
       },
 
       clearBulkImages: () => {
@@ -1044,8 +1140,10 @@ export const useStore = createWithEqualityFn<AppState & AppAction>()(
           state.interactiveSegState = castDraft(
             defaultValues.interactiveSegState
           )
-          state.editorState = castDraft(defaultValues.editorState)
-          state.cropperState = defaultValues.cropperState
+          state.editorState = castDraft(
+            cloneEditorState(defaultValues.editorState)
+          )
+          state.cropperState = { ...defaultValues.cropperState }
         })
       },
 
