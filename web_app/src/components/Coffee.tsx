@@ -2,7 +2,6 @@ import { Coffee as CoffeeIcon } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { IconButton } from "./ui/button"
 import { DialogDescription } from "@radix-ui/react-dialog"
-import Kofi from "@/assets/kofi_button_black.png"
 
 export function Coffee() {
   return (
@@ -23,8 +22,9 @@ export function Coffee() {
             href="https://ko-fi.com/Z8Z1CZJGY"
             target="_blank"
             rel="noreferrer"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
-            <img src={Kofi} className="h-[32px]" />
+            Open Ko-fi
           </a>
         </div>
       </DialogContent>
